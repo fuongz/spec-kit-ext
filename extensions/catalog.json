@@ -6,7 +6,7 @@
 		"git-commit": {
 			"name": "Git Commit Message Generator",
 			"id": "git-commit",
-			"version": "0.1.0",
+			"version": "0.1.1",
 			"description": "Generates a conventional commit message from staged git changes using an LLM. Outputs plain text to stdout and copies to clipboard. Registers an optional after_implement hook to run automatically after each /speckit.implement session.",
 			"author": "fuongz",
 			"repository": "https://github.com/fuongz/spec-kit-ext",
