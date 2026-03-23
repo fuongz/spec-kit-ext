@@ -1,0 +1,42 @@
+schema_version: "1.0"
+
+extension:
+  id: git-commit
+  version: 0.1.0
+  description: >
+    Generates a conventional commit message from staged git changes using an LLM.
+    Outputs plain text to stdout and copies to clipboard. Registers an optional
+    after_implement hook to run automatically after each /speckit.implement session.
+
+requires:
+  speckit_version: ">=0.3.2"
+  tools:
+    - name: git
+      required: true
+      version: ">=2.0"
+    - name: pbcopy
+      required: false
+      version: any
+    - name: xclip
+      required: false
+      version: any
+    - name: xsel
+      required: false
+      version: any
+
+provides:
+  commands:
+    - name: speckit.git-commit.suggest-commit
+      file: commands/suggest-commit.md
+      description: >
+        Inspect staged git changes and recent commit history, then generate a
+        conventional commit message via LLM. Prints result to stdout and copies
+        to clipboard if a clipboard utility is available.
+
+  hooks:
+    - event: after_implement
+      command: speckit.git-commit.suggest-commit
+      optional: true
+      description: >
+        Automatically suggest a commit message after each /speckit.implement
+        session completes. Optional — disable in your speckit config if not needed.

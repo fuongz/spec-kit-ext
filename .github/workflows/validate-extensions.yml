@@ -1,0 +1,179 @@
+name: Validate Extensions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "extensions/**"
+  pull_request:
+    paths:
+      - "extensions/**"
+
+jobs:
+  validate:
+    name: Validate extension manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Detect changed extensions
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          fi
+
+          CHANGED=$(git diff --name-only "${BASE}" "${HEAD}" 2>/dev/null \
+            | grep '^extensions/' \
+            | grep -v '^extensions/catalog' \
+            | cut -d/ -f2 \
+            | sort -u \
+            | tr '\n' ' ')
+
+          # Fall back to all extensions if diff unavailable (e.g. initial push)
+          if [ -z "${CHANGED}" ]; then
+            CHANGED=$(ls extensions/ | grep -v 'catalog' | tr '\n' ' ')
+          fi
+
+          echo "extensions=${CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "Validating: ${CHANGED}"
+
+      - name: Validate each extension manifest
+        run: |
+          ERRORS=0
+
+          for EXT_ID in ${{ steps.changed.outputs.extensions }}; do
+            EXT_DIR="extensions/${EXT_ID}"
+            MANIFEST="${EXT_DIR}/extension.yml"
+
+            echo ""
+            echo "── Validating ${EXT_ID} ──"
+
+            # Gate 1: extension.yml exists
+            if [ ! -f "${MANIFEST}" ]; then
+              echo "  ✗ FAIL Gate 1: extension.yml not found"
+              ERRORS=$((ERRORS + 1))
+              continue
+            fi
+            echo "  ✓ Gate 1: extension.yml present"
+
+            # Gate 2: Required fields present
+            REQUIRED_FIELDS="schema_version extension.id extension.version extension.description requires.speckit_version"
+            for FIELD in $REQUIRED_FIELDS; do
+              VALUE=$(yq eval ".${FIELD}" "${MANIFEST}" 2>/dev/null)
+              if [ -z "${VALUE}" ] || [ "${VALUE}" = "null" ]; then
+                echo "  ✗ FAIL Gate 2: missing required field '${FIELD}'"
+                ERRORS=$((ERRORS + 1))
+              fi
+            done
+            echo "  ✓ Gate 2: required fields present"
+
+            # Gate 3: Command names follow speckit.{ext-id}.* pattern
+            COMMANDS=$(yq eval '.provides.commands[].name' "${MANIFEST}" 2>/dev/null)
+            for CMD in $COMMANDS; do
+              if ! echo "${CMD}" | grep -qE "^speckit\.${EXT_ID}\."; then
+                echo "  ✗ FAIL Gate 3: command '${CMD}' does not match 'speckit.${EXT_ID}.*'"
+                ERRORS=$((ERRORS + 1))
+              fi
+            done
+            echo "  ✓ Gate 3: command naming compliant"
+
+            # Gate 4: Command file references exist
+            FILES=$(yq eval '.provides.commands[].file' "${MANIFEST}" 2>/dev/null)
+            for FILE in $FILES; do
+              if [ ! -f "${EXT_DIR}/${FILE}" ]; then
+                echo "  ✗ FAIL Gate 4: file reference '${FILE}' not found in ${EXT_DIR}/"
+                ERRORS=$((ERRORS + 1))
+              fi
+            done
+            echo "  ✓ Gate 4: file references valid"
+
+            # Gate 5: speckit_version declared
+            SPECKIT_VER=$(yq eval '.requires.speckit_version' "${MANIFEST}" 2>/dev/null)
+            if [ -z "${SPECKIT_VER}" ] || [ "${SPECKIT_VER}" = "null" ]; then
+              echo "  ✗ FAIL Gate 5: requires.speckit_version not declared"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "  ✓ Gate 5: speckit_version declared (${SPECKIT_VER})"
+            fi
+
+            # Gate 6: extension.id matches directory name
+            MANIFEST_ID=$(yq eval '.extension.id' "${MANIFEST}" 2>/dev/null)
+            if [ "${MANIFEST_ID}" != "${EXT_ID}" ]; then
+              echo "  ✗ FAIL Gate 6: extension.id '${MANIFEST_ID}' does not match directory '${EXT_ID}'"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "  ✓ Gate 6: extension.id matches directory"
+            fi
+
+            echo "  ── ${EXT_ID}: done ──"
+          done
+
+          if [ "${ERRORS}" -gt 0 ]; then
+            echo ""
+            echo "✗ Validation failed with ${ERRORS} error(s)."
+            exit 1
+          fi
+
+          echo ""
+          echo "✓ All extensions passed validation."
+
+      - name: Validate catalog.json consistency
+        run: |
+          CATALOG="extensions/catalog.json"
+          if [ ! -f "${CATALOG}" ]; then
+            echo "No catalog.json found — skipping catalog check."
+            exit 0
+          fi
+
+          ERRORS=0
+          CATALOG_IDS=$(python3 -c "
+          import json, sys
+          with open('${CATALOG}') as f:
+            data = json.load(f)
+          for k in data.get('extensions', {}).keys():
+            print(k)
+          ")
+
+          for EXT_ID in $CATALOG_IDS; do
+            EXT_DIR="extensions/${EXT_ID}"
+            if [ ! -d "${EXT_DIR}" ]; then
+              echo "✗ catalog.json references '${EXT_ID}' but directory '${EXT_DIR}' not found"
+              ERRORS=$((ERRORS + 1))
+            else
+              # Version consistency check
+              CATALOG_VER=$(python3 -c "
+          import json
+          with open('${CATALOG}') as f:
+            data = json.load(f)
+          print(data['extensions']['${EXT_ID}']['version'])
+              ")
+              MANIFEST_VER=$(yq eval '.extension.version' "${EXT_DIR}/extension.yml" 2>/dev/null)
+              if [ "${CATALOG_VER}" != "${MANIFEST_VER}" ]; then
+                echo "✗ Version mismatch for '${EXT_ID}': catalog=${CATALOG_VER}, extension.yml=${MANIFEST_VER}"
+                ERRORS=$((ERRORS + 1))
+              else
+                echo "✓ ${EXT_ID} v${CATALOG_VER}: catalog and manifest in sync"
+              fi
+            fi
+          done
+
+          if [ "${ERRORS}" -gt 0 ]; then
+            echo "✗ Catalog validation failed with ${ERRORS} error(s)."
+            exit 1
+          fi
+
+          echo "✓ catalog.json is consistent with extension directories."

@@ -1,0 +1,74 @@
+name: Publish Extension
+
+on:
+  push:
+    tags:
+      - "*-v*"
+
+jobs:
+  publish:
+    name: Package and release extension
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          # Expected format: {ext-id}-v{version}  e.g. git-commit-v0.1.0
+          VERSION="${TAG##*-v}"
+          EXT_ID="${TAG%-v*}"
+          echo "ext_id=${EXT_ID}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "zip_name=${EXT_ID}.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Validate extension directory exists
+        run: |
+          EXT_DIR="extensions/${{ steps.tag.outputs.ext_id }}"
+          if [ ! -d "${EXT_DIR}" ]; then
+            echo "ERROR: Extension directory '${EXT_DIR}' not found."
+            exit 1
+          fi
+          if [ ! -f "${EXT_DIR}/extension.yml" ]; then
+            echo "ERROR: Missing extension.yml in '${EXT_DIR}'."
+            exit 1
+          fi
+
+      - name: Validate version matches extension.yml
+        run: |
+          EXT_DIR="extensions/${{ steps.tag.outputs.ext_id }}"
+          MANIFEST_VERSION=$(grep -E '^  version:' "${EXT_DIR}/extension.yml" | awk '{print $2}')
+          TAG_VERSION="${{ steps.tag.outputs.version }}"
+          if [ "${MANIFEST_VERSION}" != "${TAG_VERSION}" ]; then
+            echo "ERROR: Tag version '${TAG_VERSION}' does not match extension.yml version '${MANIFEST_VERSION}'."
+            exit 1
+          fi
+
+      - name: Package extension
+        run: |
+          EXT_ID="${{ steps.tag.outputs.ext_id }}"
+          ZIP_NAME="${{ steps.tag.outputs.zip_name }}"
+          cd extensions
+          zip -r "../${ZIP_NAME}" "${EXT_ID}/" --exclude "*.DS_Store" --exclude "*/.git/*"
+          cd ..
+          echo "Created ${ZIP_NAME} ($(du -sh ${ZIP_NAME} | cut -f1))"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "${{ steps.tag.outputs.ext_id }} v${{ steps.tag.outputs.version }}"
+          body: |
+            ## ${{ steps.tag.outputs.ext_id }} v${{ steps.tag.outputs.version }}
+
+            Install by downloading `${{ steps.tag.outputs.zip_name }}` and following the [installation guide](extensions/${{ steps.tag.outputs.ext_id }}/README.md).
+
+            **Requires**: speckit `>=0.3.2`
+          files: ${{ steps.tag.outputs.zip_name }}
+          fail_on_unmatched_files: true
