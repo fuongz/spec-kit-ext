@@ -48,6 +48,71 @@
 					}
 				]
 			}
+		},
+		"sqlite-sync": {
+			"name": "SQLite Shared Sync",
+			"id": "sqlite-sync",
+			"version": "0.1.0",
+			"description": "Maintains a shared SQLite database of all speckit features for your team. Syncs feature status on init and after each speckit lifecycle command via optional hooks. Supports manual pull at any time.",
+			"author": "fuongz",
+			"repository": "https://github.com/fuongz/spec-kit-ext",
+			"homepage": "https://github.com/fuongz/spec-kit-ext",
+			"documentation": "https://github.com/fuongz/spec-kit-ext/blob/main/extensions/sqlite-sync/README.md",
+			"license": "MIT",
+			"tags": ["sqlite", "sync", "team", "collaboration", "productivity"],
+			"verified": false,
+			"downloads": 0,
+			"stars": 0,
+			"created_at": "2026-03-23T00:00:00Z",
+			"updated_at": "2026-03-23T00:00:00Z",
+			"path": "sqlite-sync",
+			"requires": {
+				"speckit_version": ">=0.3.2",
+				"tools": [
+					{ "name": "sqlite3", "required": true, "version": ">=3.0" },
+					{ "name": "git", "required": false, "version": ">=2.0" }
+				]
+			},
+			"provides": {
+				"commands": [
+					{
+						"name": "speckit.sqlite-sync.init",
+						"file": "sqlite-sync/commands/init.md",
+						"description": "Initialize or re-sync the shared SQLite database from the configured path. Creates schema if new, pulls existing team features, and pushes any local features not yet in the shared file."
+					},
+					{
+						"name": "speckit.sqlite-sync.sync",
+						"file": "sqlite-sync/commands/sync.md",
+						"description": "Push the current feature's status to the shared SQLite and/or pull the latest team state. Used by lifecycle hooks and can be invoked manually at any time."
+					}
+				],
+				"hooks": [
+					{
+						"event": "after_specify",
+						"command": "speckit.sqlite-sync.sync",
+						"optional": true,
+						"description": "After /speckit.specify, records the new feature with status 'draft' in the shared database."
+					},
+					{
+						"event": "after_plan",
+						"command": "speckit.sqlite-sync.sync",
+						"optional": true,
+						"description": "After /speckit.plan, updates the feature status to 'planning' in the shared database."
+					},
+					{
+						"event": "after_tasks",
+						"command": "speckit.sqlite-sync.sync",
+						"optional": true,
+						"description": "After /speckit.tasks, updates the feature status to 'tasks' in the shared database."
+					},
+					{
+						"event": "after_implement",
+						"command": "speckit.sqlite-sync.sync",
+						"optional": true,
+						"description": "After /speckit.implement, updates the feature status to 'implementing' in the shared database."
+					}
+				]
+			}
 		}
 	}
 }
