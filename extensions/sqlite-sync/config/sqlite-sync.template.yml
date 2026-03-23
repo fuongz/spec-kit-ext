@@ -1,0 +1,26 @@
+# SQLite Shared Sync Extension — Configuration Template
+#
+# Copy the block below into your project's .specify/extensions.yml under
+# the `extensions:` key, then fill in the values for your team.
+
+extensions:
+  sqlite-sync:
+    # (Required) Absolute or relative path to the shared SQLite file.
+    # All team members must have read/write access to this path.
+    # Examples:
+    #   /Volumes/TeamDrive/speckit-shared.db
+    #   ~/Dropbox/team/speckit-shared.db
+    #   /mnt/shared/speckit-shared.db
+    shared_db_path: ""
+
+    # (Optional) When true, lifecycle hooks automatically push feature
+    # status updates to the shared database after each speckit command.
+    # Set to false to disable auto-update and rely on manual sync only.
+    # Default: true
+    auto_update: true
+
+    # (Optional) Strategy for resolving write conflicts when two team
+    # members update the same feature simultaneously.
+    # Supported values: last_write_wins
+    # Default: last_write_wins
+    conflict_strategy: last_write_wins

@@ -1,0 +1,85 @@
+schema_version: "1.0"
+
+extension:
+  id: sqlite-sync
+  name: SQLite Shared Sync
+  version: 0.1.0
+  description: >
+    Maintains a shared SQLite database of all speckit features for your team.
+    On init, syncs the local view from a configured shared SQLite file. After
+    each speckit lifecycle command, auto-update hooks push the current feature's
+    status to the shared file. A manual sync command lets teammates pull the
+    latest state at any time.
+  author: fuongz
+  repository: https://github.com/fuongz/spec-kit-ext
+  homepage: https://phuongphung.com
+  license: MIT
+  license: MIT
+
+requires:
+  speckit_version: ">=0.3.2"
+  tools:
+    - name: sqlite3
+      required: true
+      version: ">=3.0"
+    - name: git
+      required: false
+      version: ">=2.0"
+
+provides:
+  commands:
+    - name: speckit.sqlite-sync.init
+      file: commands/init.md
+      description: >
+        Initialize or re-sync the shared SQLite database from the configured
+        shared_db_path. Creates the schema if the file is new, pulls all existing
+        team features, and pushes any local features not yet in the shared file.
+        Reports a summary of records pulled and pushed.
+
+    - name: speckit.sqlite-sync.sync
+      file: commands/sync.md
+      description: >
+        Push the current feature's status to the shared SQLite and/or pull the
+        latest team state. Invoked automatically by lifecycle hooks after each
+        speckit command, or manually at any time to refresh the local view.
+
+  config:
+    - name: sqlite-sync-config
+      template: config/sqlite-sync.template.yml
+      description: >
+        Configuration for the sqlite-sync extension. Set shared_db_path to the
+        team's shared SQLite file. Copy template to sqlite-sync-config.yml and
+        fill in values.
+      required: true
+
+hooks:
+  after_specify:
+    command: speckit.sqlite-sync.sync
+    optional: true
+    description: >
+      After /speckit.specify, records the feature with status 'draft' in the
+      shared database. Optional — disable auto_update in config if not needed.
+
+  after_plan:
+    command: speckit.sqlite-sync.sync
+    optional: true
+    description: >
+      After /speckit.plan, updates the feature status to 'planning' in the
+      shared database. Optional — disable auto_update in config if not needed.
+
+  after_tasks:
+    command: speckit.sqlite-sync.sync
+    optional: true
+    description: >
+      After /speckit.tasks, updates the feature status to 'tasks' in the
+      shared database. Optional — disable auto_update in config if not needed.
+
+  after_implement:
+    command: speckit.sqlite-sync.sync
+    optional: true
+    description: >
+      After /speckit.implement, updates the feature status to 'implementing'
+      in the shared database. Optional — disable auto_update in config if
+      not needed.
+
+tags: [sqlite, sync, team, collaboration, productivity]
