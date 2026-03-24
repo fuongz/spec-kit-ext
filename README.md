@@ -6,8 +6,9 @@ A collection of community extensions for [spec-kit](https://github.com/github/sp
 
 | Extension | Version | Description |
 |---|---|---|
-| [git-commit](extensions/git-commit/) | 0.1.0 | Generates conventional commit messages from staged git changes using an LLM |
-| [sqlite-sync](extensions/sqlite-sync/) | 0.1.0 | Maintains a shared SQLite database of all team features; auto-updates on every speckit command via optional hooks |
+| [git-commit](extensions/git-commit/) | 0.1.1 | Generates conventional commit messages from staged git changes using an LLM |
+| [sqlite-sync](extensions/sqlite-sync/) | 0.2.0 | Maintains a shared SQLite database of all team features; stores full spec file content on every sync; auto-updates via optional hooks |
+| [teammate-sync](extensions/teammate-sync/) | 0.1.0 | Sync specs with teammates using portable YAML snapshots — no server required; supports export, import with conflict resolution, and diff preview |
 
 ## Setup
 
@@ -37,6 +38,7 @@ This creates or updates `.specify/extension-catalogs.yml` in your project.
 ```bash
 specify extension add git-commit
 specify extension add sqlite-sync
+specify extension add teammate-sync
 ```
 
 **Step 3** — Configure extensions that require it (see [Per-extension configuration](#per-extension-configuration) below).
@@ -58,6 +60,7 @@ git clone https://github.com/fuongz/spec-kit-ext.git
 ```bash
 specify extension add --dev ./spec-kit-ext/extensions/git-commit
 specify extension add --dev ./spec-kit-ext/extensions/sqlite-sync
+specify extension add --dev ./spec-kit-ext/extensions/teammate-sync
 ```
 
 **Step 3** — Configure extensions that require it (see below).
@@ -81,6 +84,7 @@ specify extension catalog add \
 # 3. Install extensions
 specify extension add git-commit
 specify extension add sqlite-sync
+specify extension add teammate-sync
 
 # 4. Configure sqlite-sync
 #    Edit .specify/extensions/sqlite-sync/sqlite-sync-config.yml:
@@ -104,8 +108,9 @@ specify extension catalog add \
   https://raw.githubusercontent.com/fuongz/spec-kit-ext/main/extensions/catalog.json
 
 # 2. Install the extensions you need
-specify extension add sqlite-sync   # team feature tracking
-specify extension add git-commit    # commit message generation
+specify extension add sqlite-sync    # team feature tracking with full spec content
+specify extension add git-commit     # commit message generation
+specify extension add teammate-sync  # YAML snapshot sync between teammates
 
 # 3. Configure sqlite-sync
 #    Copy the config template and fill in your shared path:
@@ -124,6 +129,15 @@ cp .specify/extensions/sqlite-sync/sqlite-sync-config.template.yml \
 After installation, extension config files live in `.specify/extensions/{name}/`.
 
 **`git-commit`** — no configuration required. Works out of the box.
+
+**`teammate-sync`** — no configuration required. Works out of the box. Optionally set `shared_sync_folder` to a shared directory (Dropbox, network drive, etc.) so teammates can pick up snapshots automatically:
+
+```yaml
+extensions:
+  teammate-sync:
+    shared_sync_folder: /path/to/shared/sync-folder
+    auto_export: false
+```
 
 **`sqlite-sync`** — requires `shared_db_path`:
 
@@ -184,6 +198,7 @@ specify extension remove sqlite-sync
 |-----------|----------------|-----------------|-----------|
 | `git-commit` | None | — | [README](extensions/git-commit/README.md) |
 | `sqlite-sync` | `shared_db_path` | [sqlite-sync.template.yml](extensions/sqlite-sync/config/sqlite-sync.template.yml) | [README](extensions/sqlite-sync/README.md) |
+| `teammate-sync` | None | [teammate-sync.template.yml](extensions/teammate-sync/config/teammate-sync.template.yml) | [README](extensions/teammate-sync/README.md) |
 
 ## Contributing
 
