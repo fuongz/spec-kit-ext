@@ -1,0 +1,25 @@
+extensions:
+  teammate-sync:
+    # shared_sync_folder: /path/to/shared/folder
+    #
+    # Path to the directory used for snapshot exchange.
+    # Can be any team-accessible path:
+    #   - A Dropbox / Google Drive / iCloud synced folder
+    #   - A network mount (NFS, SMB, etc.)
+    #   - Any local path you transfer manually
+    #
+    # If not set, defaults to .specify/sync/ within the project root.
+    # The default folder is created automatically on first export.
+    # Custom paths must already exist and be writable.
+    #
+    # Example:
+    #   shared_sync_folder: /Users/shared/team-speckit-sync
+    #   shared_sync_folder: ~/Dropbox/team/speckit-sync
+
+    # auto_export: false
+    #
+    # When true, a snapshot is automatically exported to shared_sync_folder
+    # after every /speckit.implement session (via the after_implement hook).
+    # Teammates can then import your latest state without waiting for a manual export.
+    #
+    # Default: false

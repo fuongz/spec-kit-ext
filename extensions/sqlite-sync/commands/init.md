@@ -69,6 +69,34 @@ Cannot write to shared_db_path: <path>. Check permissions.
 
 ---
 
+## Step 3a — Create `spec_contents` table if it does not exist
+
+# spec_contents — full lifecycle file content (added in v0.2.0)
+
+Immediately after the Step 3 schema block, execute the following SQL to create the content storage table and its indexes:
+
+```sh
+sqlite3 "$SHARED_DB" "
+CREATE TABLE IF NOT EXISTS spec_contents (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    feature_number   TEXT    NOT NULL,
+    file_type        TEXT    NOT NULL,
+    file_path        TEXT    NOT NULL,
+    content          TEXT    NOT NULL DEFAULT '',
+    file_modified_at TEXT    NOT NULL,
+    synced_at        TEXT    NOT NULL,
+    is_deleted       INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(feature_number, file_path)
+);
+CREATE INDEX IF NOT EXISTS idx_spec_contents_feature ON spec_contents(feature_number);
+CREATE INDEX IF NOT EXISTS idx_spec_contents_type    ON spec_contents(file_type);
+"
+```
+
+This is safe to run on an existing v0.1.0 database — the `IF NOT EXISTS` clauses ensure no data is lost.
+
+---
+
 ## Step 4 — Pull existing feature records from the shared file
 
 Query the shared database for all existing feature records:
@@ -94,6 +122,35 @@ If `PULL_COUNT` is 0, print:
 ```
 Shared database is empty — no existing team features found.
 ```
+
+---
+
+## Step 4b — Pull spec file content from the database
+
+Immediately after Step 4, for **each feature row** returned in Step 4:
+
+Query `spec_contents` for all active records for that feature:
+
+```sh
+sqlite3 -separator "|" "$SHARED_DB" "SELECT file_path, content, file_modified_at FROM spec_contents WHERE feature_number = '$FEATURE_NUMBER' AND is_deleted = 0;"
+```
+
+For each returned record, parse `FILE_PATH`, `CONTENT`, and `DB_MODIFIED_AT`.
+
+**If the local file at `FILE_PATH` does not exist**: write `CONTENT` to that path, creating parent directories as needed:
+
+```sh
+mkdir -p "$(dirname "$FILE_PATH")"
+printf '%s' "$CONTENT" > "$FILE_PATH"
+```
+
+**If the local file exists**: compare the local mtime to `DB_MODIFIED_AT`:
+- Local mtime > `DB_MODIFIED_AT`: skip (local is newer). Print: `Skipped $FILE_PATH (local is newer)`
+- Local mtime ≤ `DB_MODIFIED_AT`: overwrite the local file with `CONTENT`
+
+**If a file write fails** (permissions, disk full): print the OS error and skip that file — do not abort the entire init.
+
+Count the total files written across all features as `CONTENT_PULL_COUNT`.
 
 ---
 
@@ -132,6 +189,40 @@ Then stop without completing remaining inserts.
 
 ---
 
+## Step 5b — Push spec file content for all local features
+
+Immediately after Step 5, for **each local feature directory** discovered in Step 5 (same `NNN-*` pattern):
+
+**Discover spec files** under `specs/<feature-dir>/`: all files matching `**/*.md`, `**/*.yml`, `**/*.yaml`, excluding paths under `**/checklists/**` and files ending in `.tmp`.
+
+**Derive `FILE_TYPE`** for each file using this mapping:
+- `spec.md` → `spec`
+- `plan.md` → `plan`
+- `tasks.md` → `tasks`
+- `data-model.md` → `data-model`
+- `research.md` → `research`
+- `quickstart.md` → `quickstart`
+- files under `contracts/` with `.md` extension → `contract`
+- anything else → `other`
+
+**For each discovered file**, upsert its content into `spec_contents`:
+
+```sh
+FILE_MODIFIED_AT=$(date -u -r "$FILE_PATH" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
+ESCAPED_CONTENT=$(sed "s/'/''/g" "$FILE_PATH")
+sqlite3 "$SHARED_DB" "INSERT OR REPLACE INTO spec_contents (feature_number, file_type, file_path, content, file_modified_at, synced_at, is_deleted) VALUES ('$FEATURE_NUMBER', '$FILE_TYPE', '$FILE_PATH', '$ESCAPED_CONTENT', '$FILE_MODIFIED_AT', '$TIMESTAMP', 0);"
+```
+
+**Soft-delete files** that were previously in `spec_contents` for this feature but no longer exist locally:
+
+```sh
+sqlite3 "$SHARED_DB" "UPDATE spec_contents SET is_deleted = 1, synced_at = '$TIMESTAMP' WHERE feature_number = '$FEATURE_NUMBER' AND file_path NOT IN ($(echo "$ACTIVE_FILE_PATHS" | sed "s/.*/'&'/" | paste -sd,));"
+```
+
+Count the total records upserted across **all** feature directories as `CONTENT_PUSH_COUNT`.
+
+---
+
 ## Step 6 — Write sync_log entries
 
 After completing Steps 4 and 5, append audit entries to the `sync_log` table:
@@ -152,18 +243,30 @@ If writing the log entry fails due to a locked database, set outcome to `'error'
 
 ## Step 7 — Print final summary
 
-After all steps complete successfully, output the following summary line:
+After all steps complete successfully, output the following summary:
 
 ```
-Synced: X pulled, Y pushed. No conflicts.
+Synced: {PULL_COUNT} features pulled, {PUSH_COUNT} features pushed.
+        {CONTENT_PULL_COUNT} content records pulled, {CONTENT_PUSH_COUNT} content records pushed.
 ```
 
-Where `X` is `PULL_COUNT` and `Y` is `PUSH_COUNT`.
+Where:
+- `PULL_COUNT` = feature rows pulled in Step 4
+- `PUSH_COUNT` = feature rows pushed in Step 5
+- `CONTENT_PULL_COUNT` = content files written in Step 4b
+- `CONTENT_PUSH_COUNT` = content records upserted in Step 5b
 
-If any feature row already existed in the shared database (detected in Step 5 as COUNT > 0 for that feature_number), note it as a conflict:
+**If both content counts are zero** (e.g., fresh install with no local features or empty database):
 
 ```
-Synced: X pulled, Y pushed. Z already existed (skipped).
+Synced: {PULL_COUNT} features pulled, {PUSH_COUNT} features pushed. No content records.
+```
+
+If any feature row already existed in the shared database (detected in Step 5 as COUNT > 0 for that feature_number), note it:
+
+```
+Synced: {PULL_COUNT} features pulled, {PUSH_COUNT} features pushed. Z already existed (skipped).
+        {CONTENT_PULL_COUNT} content records pulled, {CONTENT_PUSH_COUNT} content records pushed.
 ```
 
 Where `Z` is the count of local features that were already present in the shared database and therefore skipped.

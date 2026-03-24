@@ -1,12 +1,20 @@
 # sqlite-sync
 
-A speckit extension that maintains a shared SQLite database of all team features. Every time someone runs a speckit command, the shared file is updated automatically. Anyone can pull the latest state at any time.
+A speckit extension that maintains a shared SQLite database of all team features. Every time someone runs a speckit command, the shared file is updated automatically — including the full content of all spec lifecycle files. Anyone can pull the latest state at any time.
+
+## What's New in v0.2.0
+
+- **Full spec content storage** — every sync now stores the complete text of all spec lifecycle files (`spec.md`, `plan.md`, `tasks.md`, `data-model.md`, `research.md`, `quickstart.md`, `contracts/*.md`) in the new `spec_contents` table.
+- **Pull-on-init for new team members** — running `/speckit.sqlite-sync.init` on a new machine automatically writes all spec files from the database to the local `specs/` directory, so you get the full project context immediately.
+- **Direct SQL queries** — query `spec_contents` with the `sqlite3` CLI to read any spec file's full content without needing local copies.
+- **Soft-delete tracking** — files removed locally are marked `is_deleted = 1` in the database rather than being permanently deleted.
+- **Backward compatible** — existing v0.1.0 databases are silently upgraded on the first run after updating the extension.
 
 ## What it does
 
-- **`/speckit.sqlite-sync.init`** — Bootstrap: sync from a shared SQLite file, creating it if it doesn't exist. Pulls existing team features and pushes any local features not yet in the shared file.
+- **`/speckit.sqlite-sync.init`** — Bootstrap: sync from a shared SQLite file, creating it if it doesn't exist. Pulls existing team features and their full spec file content, then pushes any local features not yet in the shared file.
 - **`/speckit.sqlite-sync.sync`** — Manual sync: pull the latest team state at any time without running a speckit command.
-- **Auto-update hooks** — After `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.implement`, the current feature's status is automatically pushed to the shared database.
+- **Auto-update hooks** — After `/speckit.specify`, `/speckit.plan`, `/speckit.tasks`, and `/speckit.implement`, the current feature's status and full spec content are automatically pushed to the shared database.
 
 ## Prerequisites
 
@@ -131,10 +139,12 @@ extensions:
 | `Cannot write to shared_db_path` | Verify the path's parent directory exists and you have write permissions |
 | `shared database not found. Run /speckit.sqlite-sync.init first` | Run `/speckit.sqlite-sync.init` to bootstrap the shared database |
 | No active feature detected | Run the command from a feature branch (named `NNN-*`) |
+| `spec_contents table not found` during sync | Run `/speckit.sqlite-sync.init` to upgrade the schema (v0.1.0 → v0.2.0) |
+| Pull skipped a file (local is newer) | Expected — local mtime is newer than the DB record. Push your version first if you want to share it |
 
 ## Data model
 
-The shared SQLite file contains two tables:
+The shared SQLite file contains three tables:
 
 **`features`** — one row per speckit feature
 
@@ -147,6 +157,28 @@ The shared SQLite file contains two tables:
 | `spec_file_path` | Relative path to spec.md |
 | `created_at` / `updated_at` | ISO 8601 UTC timestamps |
 
+**`spec_contents`** — full text content of lifecycle files (added in v0.2.0)
+
+| Column | Description |
+|--------|-------------|
+| `feature_number` | Links to `features.feature_number` |
+| `file_type` | `spec`, `plan`, `tasks`, `data-model`, `research`, `quickstart`, `contract`, `other` |
+| `file_path` | Relative path from repo root |
+| `content` | Full UTF-8 text of the file |
+| `file_modified_at` | Local file mtime at push time (ISO 8601 UTC) |
+| `synced_at` | When this row was written to the database |
+| `is_deleted` | `0` = active, `1` = soft-deleted (file was removed locally) |
+
+```bash
+# List all stored spec files
+sqlite3 /path/to/speckit-team.db \
+  "SELECT feature_number, file_type, file_path, length(content) AS bytes FROM spec_contents WHERE is_deleted = 0 ORDER BY feature_number, file_type;"
+
+# Read a specific spec file's full content
+sqlite3 /path/to/speckit-team.db \
+  "SELECT content FROM spec_contents WHERE feature_number = '004' AND file_type = 'spec';"
+```
+
 **`sync_log`** — audit trail of all sync operations
 
 | Column | Description |
@@ -154,7 +186,7 @@ The shared SQLite file contains two tables:
 | `direction` | `push` or `pull` |
 | `records_affected` | Number of rows written or read |
 | `outcome` | `success`, `conflict`, or `error` |
-| `notes` | Human-readable detail |
+| `notes` | Human-readable detail (includes content record count from v0.2.0) |
 
 ## Compatibility
 

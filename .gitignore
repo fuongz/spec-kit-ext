@@ -4,3 +4,7 @@
 !.env.local
 .specify
 specs
+
+# teammate-sync runtime files (local-only; exchanged out-of-band)
+.specify/sync/*.sync.yml
+.specify/sync/.index.yml

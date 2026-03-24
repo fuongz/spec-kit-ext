@@ -110,6 +110,56 @@ Set `PUSH_OUTCOME` to `success` and `PUSH_COUNT` to `1`.
 
 ---
 
+## Step 3b — Push current feature's spec file content
+
+This step runs immediately after Step 3, under the same preconditions (valid feature branch, hook event context).
+
+**Check that `spec_contents` table exists**. If it does not (v0.1.0 database), print:
+
+```
+sqlite-sync: spec_contents table not found. Run /speckit.sqlite-sync.init to upgrade the schema.
+```
+
+Then continue to Step 4 — do not abort.
+
+**Determine `FEATURE_DIR`** = `specs/$BRANCH/` relative to repo root.
+
+**Discover spec files** under `FEATURE_DIR`: all files matching `**/*.md`, `**/*.yml`, `**/*.yaml`, excluding paths under `**/checklists/**` and files ending in `.tmp`.
+
+**Derive `FILE_TYPE`** for each file using this mapping:
+- `spec.md` → `spec`
+- `plan.md` → `plan`
+- `tasks.md` → `tasks`
+- `data-model.md` → `data-model`
+- `research.md` → `research`
+- `quickstart.md` → `quickstart`
+- files under `contracts/` with `.md` extension → `contract`
+- anything else → `other`
+
+**For each discovered file**, upsert its content into `spec_contents`:
+
+```sh
+FILE_MODIFIED_AT=$(date -u -r "$FILE_PATH" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
+ESCAPED_CONTENT=$(sed "s/'/''/g" "$FILE_PATH")
+sqlite3 "$SHARED_DB" "INSERT OR REPLACE INTO spec_contents (feature_number, file_type, file_path, content, file_modified_at, synced_at, is_deleted) VALUES ('$FEATURE_NUMBER', '$FILE_TYPE', '$FILE_PATH', '$ESCAPED_CONTENT', '$FILE_MODIFIED_AT', '$TIMESTAMP', 0);"
+```
+
+**Soft-delete files** that were previously in `spec_contents` for this feature but no longer exist locally:
+
+```sh
+sqlite3 "$SHARED_DB" "UPDATE spec_contents SET is_deleted = 1, synced_at = '$TIMESTAMP' WHERE feature_number = '$FEATURE_NUMBER' AND file_path NOT IN ($(echo "$ACTIVE_FILE_PATHS" | sed "s/.*/'&'/" | paste -sd,));"
+```
+
+Set `CONTENT_PUSH_COUNT` = number of records upserted. If `FEATURE_DIR` does not exist or contains no matching files, `CONTENT_PUSH_COUNT = 0` — no error.
+
+**Update the `sync_log` notes** for the Step 3 push entry to include the content count:
+
+```
+hook: $HOOK_EVENT set status=$STATUS for $BRANCH; $CONTENT_PUSH_COUNT content records pushed
+```
+
+---
+
 ## Step 4 — Pull path: fetch newer records from the shared database
 
 This step applies when direction is `pull` or `both`.
@@ -140,17 +190,17 @@ sqlite3 "$SHARED_DB" "INSERT INTO sync_log (timestamp, direction, records_affect
 
 ## Step 5 — Print outcome
 
-After Steps 3 and 4 complete, print the result:
+After Steps 3, 3b, and 4 complete, print the result:
 
-**If records were updated** (PUSH_COUNT + PULL_COUNT > 0):
+**If records were updated** (PUSH_COUNT + PULL_COUNT + CONTENT_PUSH_COUNT > 0):
 
 ```
-Synced: X records updated.
+Synced: X records updated. {CONTENT_PUSH_COUNT} content records pushed.
 ```
 
 Where `X` is the total of PUSH_COUNT + PULL_COUNT.
 
-**If nothing changed** (PUSH_COUNT = 0 and PULL_COUNT = 0):
+**If nothing changed** (PUSH_COUNT = 0, PULL_COUNT = 0, and CONTENT_PUSH_COUNT = 0):
 
 ```
 Already up to date.

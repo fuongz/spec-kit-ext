@@ -52,13 +52,13 @@
 		"sqlite-sync": {
 			"name": "SQLite Shared Sync",
 			"id": "sqlite-sync",
-			"version": "0.1.0",
-			"description": "Maintains a shared SQLite database of all speckit features for your team. Syncs feature status on init and after each speckit lifecycle command via optional hooks. Supports manual pull at any time.",
+			"version": "0.2.0",
+			"description": "Maintains a shared SQLite database of all speckit features for your team. Stores full spec file content on every sync so teammates can restore any feature's complete lifecycle files. Syncs feature status and content on init and after each speckit lifecycle command via optional hooks.",
 			"author": "fuongz",
 			"repository": "https://github.com/fuongz/spec-kit-ext",
 			"homepage": "https://github.com/fuongz/spec-kit-ext",
 			"documentation": "https://github.com/fuongz/spec-kit-ext/blob/main/extensions/sqlite-sync/README.md",
-			"download_url": "https://github.com/fuongz/spec-kit-ext/releases/download/sqlite-sync-v0.1.0/sqlite-sync.zip",
+			"download_url": "https://github.com/fuongz/spec-kit-ext/releases/download/sqlite-sync-v0.2.0/sqlite-sync.zip",
 			"license": "MIT",
 			"tags": ["sqlite", "sync", "team", "collaboration", "productivity"],
 			"verified": false,
@@ -111,6 +111,58 @@
 						"command": "speckit.sqlite-sync.sync",
 						"optional": true,
 						"description": "After /speckit.implement, updates the feature status to 'implementing' in the shared database."
+					}
+				]
+			}
+		},
+		"teammate-sync": {
+			"name": "Teammate Sync",
+			"id": "teammate-sync",
+			"version": "0.1.0",
+			"description": "Sync your speckit project state with teammates using portable YAML snapshots — no server, no daemon, no real-time sync required. Export your specs/ directory into a single YAML file, share it via any method, and teammates can import it with interactive conflict resolution. Includes a diff/preview command.",
+			"author": "fuongz",
+			"repository": "https://github.com/fuongz/spec-kit-ext",
+			"homepage": "https://github.com/fuongz/spec-kit-ext",
+			"documentation": "https://github.com/fuongz/spec-kit-ext/blob/main/extensions/teammate-sync/README.md",
+			"download_url": "https://github.com/fuongz/spec-kit-ext/releases/download/teammate-sync-v0.1.0/teammate-sync.zip",
+			"license": "MIT",
+			"tags": ["sync", "team", "collaboration", "snapshot", "yaml", "productivity"],
+			"verified": false,
+			"downloads": 0,
+			"stars": 0,
+			"created_at": "2026-03-24T00:00:00Z",
+			"updated_at": "2026-03-24T00:00:00Z",
+			"path": "teammate-sync",
+			"requires": {
+				"speckit_version": ">=0.3.2",
+				"tools": [
+					{ "name": "git", "required": false, "version": ">=2.0" }
+				]
+			},
+			"provides": {
+				"commands": [
+					{
+						"name": "speckit.teammate-sync.export",
+						"file": "teammate-sync/commands/export.md",
+						"description": "Export the entire specs/ directory into a portable YAML snapshot file. Saved to the configured shared_sync_folder (default: .specify/sync/). Tracks files by stable UUID for accurate conflict detection across renames."
+					},
+					{
+						"name": "speckit.teammate-sync.import",
+						"file": "teammate-sync/commands/import.md",
+						"description": "Import a teammate's YAML snapshot into the local specs/ directory. Merges non-conflicting changes automatically; presents an interactive [L]/[T]/[S] prompt for conflicts. Atomic — no partial writes on failure."
+					},
+					{
+						"name": "speckit.teammate-sync.diff",
+						"file": "teammate-sync/commands/diff.md",
+						"description": "Preview what would change if a snapshot were imported, without modifying any local files. Shows +/~/!/= markers with a summary count."
+					}
+				],
+				"hooks": [
+					{
+						"event": "after_implement",
+						"command": "speckit.teammate-sync.export",
+						"optional": true,
+						"description": "After /speckit.implement, automatically export a snapshot to the configured shared_sync_folder. Enable by setting auto_export: true in config."
 					}
 				]
 			}
